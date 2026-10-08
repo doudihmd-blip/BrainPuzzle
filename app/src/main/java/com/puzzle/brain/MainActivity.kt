@@ -1,13 +1,15 @@
 package com.puzzle.brain
 
 import android.content.Context
-import android.media.MediaPlayer
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -18,20 +20,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.hypot
 import kotlin.random.Random
 
@@ -49,14 +49,14 @@ data class GeneratedLevel(
 )
 
 val GameColors = listOf(
-    Color(0xFF4CAF50), // أخضر
-    Color(0xFFE91E63), // وردي
-    Color(0xFF2196F3), // أزرق
-    Color(0xFFFF9800), // برتقالي
-    Color(0xFF9C27B0), // بنفسجي
-    Color(0xFF00BCD4), // سماوي
-    Color(0xFFFFEB3B), // أصفر
-    Color(0xFF795548)  // بني
+    Color(0xFF00E676), // أخضر نيون
+    Color(0xFFFF1744), // أحمر ناري
+    Color(0xFF2979FF), // أزرق ساطع
+    Color(0xFFFF9100), // برتقالي
+    Color(0xFFD500F9), // بنفسجي نيون
+    Color(0xFF00E5FF), // سماوي
+    Color(0xFFFFEA00), // أصفر براق
+    Color(0xFFFF4081)  // وردي
 )
 
 fun generateLevel(levelNum: Int, boardSizePx: Float): GeneratedLevel {
@@ -66,7 +66,7 @@ fun generateLevel(levelNum: Int, boardSizePx: Float): GeneratedLevel {
     val gridSize = when {
         levelNum <= 10 -> 4
         levelNum <= 25 -> 5
-        levelNum <= 45 -> 6
+        levelNum <= 50 -> 6
         levelNum <= 80 -> 7
         else -> 8
     }
@@ -129,9 +129,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun PuzzleGameApp() {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("brain_puzzle_prefs", Context.MODE_PRIVATE) }
 
-    var currentLevelNumber by remember { mutableStateOf(prefs.getInt("saved_level", 32)) }
+    var currentLevelNumber by remember { mutableStateOf(prefs.getInt("saved_level", 33)) }
     val boardSizePx = 800f
     val currentLevel = remember(currentLevelNumber) { generateLevel(currentLevelNumber, boardSizePx) }
 
@@ -140,58 +141,50 @@ fun PuzzleGameApp() {
     var activePath by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var levelPassed by remember { mutableStateOf(false) }
 
-    // تشغيل صوت التصفيق
-    fun playCelebrationSound() {
+    // توليد أصوات تفاعلية نظامية مضمونة
+    val toneGen = remember {
         try {
-            val rawId = context.resources.getIdentifier("applause", "raw", context.packageName)
-            if (rawId != 0) {
-                val player = MediaPlayer.create(context, rawId)
-                player?.setOnCompletionListener { it.release() }
-                player?.start()
-            }
+            ToneGenerator(AudioManager.STREAM_MUSIC, 100)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    val vibrator = remember {
+        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
+
+    fun playSingleLineSound() {
+        toneGen?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
+        try {
+            vibrator?.vibrate(VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
         } catch (_: Exception) {}
     }
 
-    // حركة التنفس أثناء التفكير (شخصية حية دائماً)
-    val idleTransition = rememberInfiniteTransition(label = "IdleLive")
-    val idleBreath by idleTransition.animateFloat(
-        initialValue = 0.98f,
-        targetValue = 1.04f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "IdleBreath"
-    )
-    val idleTilt by idleTransition.animateFloat(
-        initialValue = -3f,
-        targetValue = 3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "IdleTilt"
-    )
+    fun playWinFanfare() {
+        coroutineScope.launch {
+            // معزوفة انتصار متتالية وسريعة
+            toneGen?.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+            delay(130)
+            toneGen?.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+            delay(130)
+            toneGen?.startTone(ToneGenerator.TONE_CDMA_ALERT_NETWORK_LITE, 350)
+            try {
+                vibrator?.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE))
+            } catch (_: Exception) {}
+        }
+    }
 
-    // حركة الرقص والتصفيق المهرجاني عند الفوز
-    val winTransition = rememberInfiniteTransition(label = "ClapParty")
-    val winBounce by winTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = 1.25f,
+    // حركة الاحتفال للأيقونة
+    val pulseTransition = rememberInfiniteTransition(label = "Pulse")
+    val badgeScale by pulseTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.08f,
         animationSpec = infiniteRepeatable(
-            animation = tween(180, easing = FastOutLinearInEasing),
+            animation = tween(700, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "Bounce"
-    )
-    val winWobble by winTransition.animateFloat(
-        initialValue = -18f,
-        targetValue = 18f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(180, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "Wobble"
+        label = "BadgePulse"
     )
 
     fun resetLevel() {
@@ -209,75 +202,35 @@ fun PuzzleGameApp() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color(0xFF0B192C), Color(0xFF1E3E62), Color(0xFF000000))))
+            .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF1E293B), Color(0xFF020617))))
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // شريط الرأس مع الشخصية المتفاعلة
+        // شريط الرأس الاحترافي بدون صور أشخاص
         Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0x33FFFFFF)),
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            shape = RoundedCornerShape(22.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0x2AFFFFFF)),
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // صورة الشخصية الحية
-                Box(contentAlignment = Alignment.Center) {
-                    val resId = context.resources.getIdentifier("character", "drawable", context.packageName)
-                    
-                    val charScale = if (levelPassed) winBounce else idleBreath
-                    val charRotate = if (levelPassed) winWobble else idleTilt
-
-                    val imgModifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .border(
-                            width = if (levelPassed) 4.dp else 2.5.dp,
-                            color = if (levelPassed) Color(0xFFFFD700) else Color.White,
+                // أيقونة اللعبة الذكية بدلاً من الصورة
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .scale(if (levelPassed) badgeScale else 1f)
+                        .background(
+                            brush = Brush.radialGradient(listOf(Color(0xFF6366F1), Color(0xFF4338CA))),
                             shape = CircleShape
                         )
-                        .scale(charScale)
-                        .rotate(charRotate)
-
-                    if (resId != 0) {
-                        Image(
-                            painter = painterResource(id = resId),
-                            contentDescription = "Character Avatar",
-                            modifier = imgModifier,
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Box(
-                            modifier = imgModifier.background(Color(0xFF37474F)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(if (levelPassed) "🎉" else "🧐", fontSize = 34.sp)
-                        }
-                    }
-
-                    // أيدي تصفيق تظهر وتهتز عند الفوز
-                    if (levelPassed) {
-                        Text(
-                            text = "👏",
-                            fontSize = 28.sp,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .offset(x = 8.dp, y = 4.dp)
-                                .scale(winBounce)
-                        )
-                        Text(
-                            text = "👏",
-                            fontSize = 28.sp,
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .offset(x = (-8).dp, y = 4.dp)
-                                .scale(winBounce)
-                        )
-                    }
+                        .border(2.dp, Color(0xFF818CF8), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (levelPassed) "🏆" else "🧠", fontSize = 28.sp)
                 }
 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -285,25 +238,25 @@ fun PuzzleGameApp() {
                         text = "المستوى ${currentLevel.number}",
                         color = Color.White,
                         fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.ExtraBold
                     )
                     Text(
                         text = "صل ${currentLevel.pairs.size} مسارات دون تقاطع!",
-                        color = Color(0xFFFFEB3B),
+                        color = Color(0xFF38BDF8),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
                 Surface(
-                    color = Color(0xFFFFC107),
+                    color = Color(0xFFFBBF24),
                     shape = RoundedCornerShape(20.dp)
                 ) {
                     Text(
                         text = "IQ ${currentLevel.iqScore}",
                         fontWeight = FontWeight.ExtraBold,
-                        color = Color(0xFF1A1A1A),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        color = Color(0xFF0F172A),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                     )
                 }
             }
@@ -363,6 +316,8 @@ fun PuzzleGameApp() {
                                     if (!intersects) {
                                         activePath = activePath + newPt
                                     } else {
+                                        // كسر الخط وصوت خطأ خفيف
+                                        toneGen?.startTone(ToneGenerator.TONE_PROP_NACK, 50)
                                         activePath = emptyList()
                                         activePairId = null
                                     }
@@ -382,9 +337,10 @@ fun PuzzleGameApp() {
                                         val target = if (hypot(first.x - scaledStart.x, first.y - scaledStart.y) < 20f) scaledEnd else scaledStart
                                         if (hypot(last.x - target.x, last.y - target.y) <= (34f * scale) + 32f) {
                                             completedPaths[pairId] = activePath + target
+                                            playSingleLineSound() // صوت إكمال خط واحد
                                             if (completedPaths.size == currentLevel.pairs.size) {
                                                 levelPassed = true
-                                                playCelebrationSound()
+                                                playWinFanfare() // أصوات الاحتفال والانتصار الكبرى
                                             }
                                         }
                                     }
@@ -405,7 +361,7 @@ fun PuzzleGameApp() {
                                 color = pair.color.copy(alpha = 0.9f),
                                 start = pts[i],
                                 end = pts[i + 1],
-                                strokeWidth = 15f,
+                                strokeWidth = 16f,
                                 cap = StrokeCap.Round
                             )
                         }
@@ -420,7 +376,7 @@ fun PuzzleGameApp() {
                                 color = pair.color,
                                 start = activePath[i],
                                 end = activePath[i + 1],
-                                strokeWidth = 15f,
+                                strokeWidth = 16f,
                                 cap = StrokeCap.Round
                             )
                         }
@@ -432,21 +388,21 @@ fun PuzzleGameApp() {
                     listOf(pair.start * scale, pair.end * scale).forEach { pos ->
                         drawCircle(color = Color.White, radius = 32f * scale, center = pos)
                         drawCircle(color = pair.color, radius = 26f * scale, center = pos)
-                        drawCircle(color = Color.White.copy(alpha = 0.6f), radius = 7f * scale, center = pos - Offset(5f * scale, 5f * scale))
+                        drawCircle(color = Color.White.copy(alpha = 0.7f), radius = 7f * scale, center = pos - Offset(5f * scale, 5f * scale))
                     }
                 }
             }
         }
 
-        // لوحة الفوز والأزرار
+        // أزرار التحكم والاحتفال
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(bottom = 16.dp)
         ) {
             if (levelPassed) {
                 Text(
-                    text = "👏 يصفق لك بحرارة! مبروووك! 🎉",
-                    color = Color(0xFFFFEB3B),
+                    text = "🎉 انتصار رائع! ذكاء خارق! ⭐",
+                    color = Color(0xFFFBBF24),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -454,7 +410,7 @@ fun PuzzleGameApp() {
 
                 Button(
                     onClick = { currentLevelNumber++ },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
                     shape = RoundedCornerShape(25.dp),
                     modifier = Modifier.fillMaxWidth(0.85f).height(54.dp)
                 ) {
@@ -478,7 +434,7 @@ fun PuzzleGameApp() {
                         OutlinedButton(
                             onClick = { currentLevelNumber-- },
                             shape = RoundedCornerShape(25.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFB0BEC5)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF94A3B8)),
                             modifier = Modifier.weight(0.7f).height(48.dp)
                         ) {
                             Text("السابق", fontSize = 14.sp)
